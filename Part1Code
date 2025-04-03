@@ -1,0 +1,118 @@
+# Install required packages if not already installed
+import sys
+import subprocess
+
+# Check if folium is installed, if not install it
+
+  
+import folium
+
+# Now the rest of your code will work
+import pandas as pd
+
+# Your original code continues here...
+from folium.plugins import MarkerCluster
+
+def create_water_stations_map(file_path='station.csv', output_file='water_stations_map.html'):
+    """
+    Creates an interactive map that pinpoints the location of every station from a CSV file.
+    
+    Args:
+        file_path (str): Path to the CSV file. Default is 'station.csv'.
+        output_file (str): Path to save the generated map. Default is 'water_stations_map.html'.
+    
+    Returns:
+        folium.Map: The generated map object.
+    """
+    try:
+        # Read the CSV file
+        print(f"Reading data from {file_path}...")
+        df = pd.read_csv(file_path)
+        
+        # Remove rows with missing latitude or longitude
+        valid_coords = df.dropna(subset=['LatitudeMeasure', 'LongitudeMeasure'])
+        
+        if valid_coords.empty:
+            print("No valid coordinates found in the data.")
+            return None
+            
+        print(f"Found {len(valid_coords)} stations with valid coordinates.")
+        
+        # Calculate the center of the map (average of all coordinates)
+        center_lat = valid_coords['LatitudeMeasure'].mean()
+        center_lng = valid_coords['LongitudeMeasure'].mean()
+        
+        # Create a map centered at the average location
+        station_map = folium.Map(location=[center_lat, center_lng], zoom_start=5)
+        
+        # Add a marker cluster to handle many markers efficiently
+        marker_cluster = MarkerCluster().add_to(station_map)
+        
+        # Add markers for each station
+        for idx, row in valid_coords.iterrows():
+            # Prepare popup content
+            popup_content = f"""
+            <b>Name:</b> {row['MonitoringLocationName']}<br>
+            <b>ID:</b> {row['MonitoringLocationIdentifier']}<br>
+            <b>Type:</b> {row['MonitoringLocationTypeName']}<br>
+            <b>Organization:</b> {row['OrganizationFormalName']}<br>
+            """
+            
+            # Add state and county if available
+            if pd.notna(row['StateCode']):
+                popup_content += f"<b>State:</b> {row['StateCode']}<br>"
+            if pd.notna(row['CountyCode']):
+                popup_content += f"<b>County:</b> {row['CountyCode']}<br>"
+                
+            # Add coordinates
+            popup_content += f"<b>Coordinates:</b> {row['LatitudeMeasure']}, {row['LongitudeMeasure']}"
+            
+            # Determine marker color based on station type (customize as needed)
+            station_type = str(row['MonitoringLocationTypeName']).lower()
+            if 'water quality' in station_type:
+                color = 'blue'
+            elif 'stream' in station_type:
+                color = 'green'
+            elif 'well' in station_type:
+                color = 'orange'
+            elif 'lake' in station_type:
+                color = 'purple'
+            else:
+                color = 'red'
+                
+            # Create marker with popup
+            folium.Marker(
+                location=[row['LatitudeMeasure'], row['LongitudeMeasure']],
+                popup=folium.Popup(popup_content, max_width=300),
+                tooltip=row['MonitoringLocationName'],
+                icon=folium.Icon(color=color)
+            ).add_to(marker_cluster)
+        
+        # Add a layer control to toggle between different base maps
+        folium.TileLayer('Stamen Terrain').add_to(station_map)
+        folium.TileLayer('CartoDB positron').add_to(station_map)
+        folium.TileLayer('OpenStreetMap').add_to(station_map)
+        folium.LayerControl().add_to(station_map)
+        
+        # Save the map to an HTML file
+        station_map.save(output_file)
+        print(f"Map successfully created and saved to {output_file}")
+        
+        return station_map
+        
+    except FileNotFoundError:
+        print(f"Error: The file '{file_path}' was not found.")
+    except pd.errors.EmptyDataError:
+        print(f"Error: The file '{file_path}' is empty.")
+    except pd.errors.ParserError:
+        print(f"Error: Unable to parse '{file_path}'. Please check the file format.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        
+    return None
+
+# Example usage
+if __name__ == "__main__":
+    create_water_stations_map()
+    print("Open water_stations_map.html in your web browser to view the map.")
+# (The rest of your map creation code remains the same)
