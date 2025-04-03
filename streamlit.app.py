@@ -196,9 +196,17 @@ def create_map(filtered_stations, station_col, value_col):
         ).add_to(marker_cluster)
     
     # Add tile layers
-    folium.TileLayer('Stamen Terrain').add_to(m)
-    folium.TileLayer('CartoDB positron').add_to(m)
-    folium.LayerControl().add_to(m)
+   # With these corrected lines that include attribution:
+    folium.TileLayer(
+    'Stamen Terrain',
+    attr='Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.'
+).add_to(m)
+
+    folium.TileLayer(
+    'CartoDB positron',
+    attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+).add_to(m)
+
     
     return m
 
@@ -491,3 +499,4 @@ def main():
 # Run the app
 if __name__ == "__main__":
     main()
+
