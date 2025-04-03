@@ -1,0 +1,202 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import seaborn as sns
+from datetime import datetime
+
+def plot_water_quality_characteristics(file_path, characteristics, site_id=None, start_date=None, end_date=None, output_file=None):
+    """
+    Access a CSV file containing water quality data, filter for two specific characteristics,
+    and plot the results with measured values on the y-axis and time on the x-axis.
+    
+    Args:
+        file_path (str): Path to the CSV file containing water quality data.
+        characteristics (list): List of water quality characteristics to filter and plot (e.g., ['pH', 'Temperature']).
+            Must contain either one or two characteristics.
+        site_id (str, optional): Filter data for a specific monitoring site ID. If None, includes all sites.
+        start_date (str, optional): Start date for filtering in 'YYYY-MM-DD' format. If None, includes all dates.
+        end_date (str, optional): End date for filtering in 'YYYY-MM-DD' format. If None, includes all dates.
+        output_file (str, optional): Path to save the plot. If None, the plot is displayed but not saved.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated plot figure.
+    """
+    try:
+        # Ensure characteristics is a list and has at most 2 items
+        if isinstance(characteristics, str):
+            characteristics = [characteristics]
+            
+        if len(characteristics) > 2:
+            print("Warning: This function supports at most two characteristics. Only the first two will be plotted.")
+            characteristics = characteristics[:2]
+            
+        if len(characteristics) == 0:
+            print("Error: At least one characteristic must be provided.")
+            return None
+            
+        # Read the CSV file
+        print(f"Reading data from {file_path}...")
+        df = pd.read_csv(file_path)
+        
+        # Identify column names
+        date_columns = ['ActivityStartDate', 'SampleDate', 'ActivityDate', 'Date', 'TimeStamp']
+        char_columns = ['CharacteristicName', 'ParameterName', 'Characteristic', 'Parameter']
+        value_columns = ['ResultValue', 'MeasuredValue', 'Value', 'Result', 'ResultMeasureValue']
+        site_columns = ['MonitoringLocationIdentifier', 'StationID', 'SiteID', 'LocationID']
+        unit_columns = ['ResultMeasure/MeasureUnitCode', 'MeasureUnitCode', 'Units', 'Unit']
+        
+        # Find the actual column names in the data
+        date_col = next((col for col in date_columns if col in df.columns), None)
+        char_col = next((col for col in char_columns if col in df.columns), None)
+        value_col = next((col for col in value_columns if col in df.columns), None)
+        site_col = next((col for col in site_columns if col in df.columns), None)
+        unit_col = next((col for col in unit_columns if col in df.columns), None)
+        
+        # Check if required columns are found
+        if not date_col or not char_col or not value_col:
+            missing_cols = []
+            if not date_col: missing_cols.append("date")
+            if not char_col: missing_cols.append("characteristic")
+            if not value_col: missing_cols.append("value")
+            print(f"Error: Could not find these required columns: {', '.join(missing_cols)}")
+            print("Available columns:", ", ".join(df.columns))
+            return None
+            
+        # Convert date column to datetime
+        df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+        
+        # Create a figure with one or two y-axes
+        fig, ax1 = plt.subplots(figsize=(14, 7))
+        
+        # Lists to store data for legend
+        lines = []
+        labels = []
+        
+        # Colors for different plots
+        colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12']
+        
+        # Process each characteristic
+        for i, characteristic in enumerate(characteristics):
+            # Filter for the specified characteristic (case-insensitive contains match)
+            char_df = df[df[char_col].str.contains(characteristic, case=False, na=False)].copy()
+            
+            if char_df.empty:
+                print(f"No data found for characteristic: {characteristic}")
+                continue
+                
+            # Filter by site ID if provided
+            if site_id and site_col in df.columns:
+                char_df = char_df[char_df[site_col] == site_id]
+                
+            # Filter by date range if provided
+            if start_date:
+                start_dt = pd.to_datetime(start_date)
+                char_df = char_df[char_df[date_col] >= start_dt]
+                
+            if end_date:
+                end_dt = pd.to_datetime(end_date)
+                char_df = char_df[char_df[date_col] <= end_dt]
+                
+            # Convert values to numeric and clean data
+            char_df[value_col] = pd.to_numeric(char_df[value_col], errors='coerce')
+            char_df = char_df.dropna(subset=[date_col, value_col])
+            
+            if char_df.empty:
+                print(f"No valid data found for {characteristic} after filtering.")
+                continue
+                
+            # Sort by date
+            char_df = char_df.sort_values(by=date_col)
+            
+            # Get units if available
+            units = ""
+            if unit_col and unit_col in char_df.columns:
+                units = char_df[unit_col].mode().iloc[0] if not char_df[unit_col].isna().all() else ""
+                
+            # Use first or second y-axis
+            ax = ax1 if i == 0 else ax2
+            color = colors[i % len(colors)]
+            
+            # Plot on the appropriate axis
+            if site_col in char_df.columns and len(char_df[site_col].unique()) > 1:
+                # Multiple sites - use seaborn for better color handling
+                for site, site_data in char_df.groupby(site_col):
+                    line = ax.plot(site_data[date_col], site_data[value_col], 'o-', 
+                                  label=f"{characteristic} - {site}", 
+                                  color=colors[(i*len(char_df[site_col].unique()) + len(lines)) % len(colors)],
+                                  linewidth=2, markersize=6, alpha=0.8)
+                    lines.extend(line)
+                    labels.append(f"{characteristic} - {site}")
+            else:
+                # Single site or no site information
+                line = ax.plot(char_df[date_col], char_df[value_col], 'o-', 
+                              color=color, linewidth=2, markersize=6)
+                lines.extend(line)
+                labels.append(f"{characteristic}{f' ({units})' if units else ''}")
+                
+            # Set axis label
+            y_label = f"{characteristic}{f' ({units})' if units else ''}"
+            ax.set_ylabel(y_label, fontsize=12, color=color)
+            ax.tick_params(axis='y', labelcolor=color)
+            
+            # Add statistics text
+            stats_x = 0.02 if i == 0 else 0.78
+            stats_text = (
+                f"{characteristic} Stats:\n"
+                f"Count: {len(char_df)}\n"
+                f"Min: {char_df[value_col].min():.2f}\n"
+                f"Max: {char_df[value_col].max():.2f}\n"
+                f"Mean: {char_df[value_col].mean():.2f}\n"
+                f"Median: {char_df[value_col].median():.2f}"
+            )
+            
+            plt.figtext(stats_x, 0.02, stats_text, fontsize=10,
+                       bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+            
+            # Create second y-axis for the second characteristic
+            if i == 0 and len(characteristics) > 1:
+                ax2 = ax1.twinx()
+        
+        # Set x-axis label and format
+        ax1.set_xlabel('Date', fontsize=12)
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax1.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate()  # Rotate date labels
+        
+        # Set title and grid
+        title_chars = " and ".join(characteristics)
+        plt.title(f"{title_chars} Time Series", fontsize=14, fontweight='bold')
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        
+        # Create a single legend if we have multiple lines
+        if len(lines) > 1:
+            fig.legend(lines, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), 
+                      ncol=min(len(lines), 3), frameon=True, fontsize=10)
+            # Make room for the legend
+            plt.subplots_adjust(top=0.85)
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Save the plot if output file is specified
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to {output_file}")
+            
+        # Show the plot
+        plt.show()
+        
+        return fig
+        
+    except FileNotFoundError:
+        print(f"Error: The file '{file_path}' was not found.")
+    except pd.errors.EmptyDataError:
+        print(f"Error: The file '{file_path}' is empty.")
+    except pd.errors.ParserError:
+        print(f"Error: Unable to parse '{file_path}'. Please check the file format.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+    return None
